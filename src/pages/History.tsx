@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { HistoryIcon } from '../components/Icons';
 import supabase from '../lib/db';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import PageTitle from '../components/PageTitle';
 
 interface HistoryEntry {
   id: string;
@@ -30,6 +32,7 @@ const History: React.FC = () => {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const { t } = useLanguage(); // Utiliser la fonction de traduction
 
   useEffect(() => {
     if (user) {
@@ -65,7 +68,8 @@ const History: React.FC = () => {
   };
 
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleString('fr-FR', {
+    // Utiliser la locale du navigateur pour le format de date
+    return new Date(date).toLocaleString(undefined, {
       year: 'numeric',
       month: 'numeric',
       day: 'numeric',
@@ -77,15 +81,15 @@ const History: React.FC = () => {
   const getActionLabel = (action: string) => {
     switch (action) {
       case 'created':
-        return 'Création';
+        return t('history.action.created');
       case 'updated':
-        return 'Modification';
+        return t('history.action.updated');
       case 'deleted':
-        return 'Suppression';
+        return t('history.action.deleted');
       case 'viewed':
-        return 'Consultation';
+        return t('history.action.viewed');
       case 'rotated':
-        return 'Rotation';
+        return t('history.action.rotated');
       default:
         return action;
     }
@@ -109,36 +113,47 @@ const History: React.FC = () => {
   };
 
   const getActionDetails = (entry: HistoryEntry) => {
+    // Récupérer le nom de la clé depuis les détails
+    const keyName = entry.details?.name || '';
+    
+    // Préparer un préfixe avec le nom de la clé s'il est disponible
+    const keyPrefix = keyName ? `"${keyName}" - ` : '';
+    
     switch (entry.action) {
       case 'created':
-        return `Nouvelle clé API créée pour ${entry.project_name || 'Projet inconnu'}`;
+        return `${keyPrefix}${t('history.details.created').replace('{project}', entry.project_name || t('history.defaultProject'))}`;
       case 'updated':
         if (entry.details?.changes) {
           const changes = [];
           if (entry.details.changes.name?.old && entry.details.changes.name?.new) {
-            changes.push(`nom modifié de "${entry.details.changes.name.old}" à "${entry.details.changes.name.new}"`);
+            changes.push(t('history.details.nameChanged')
+              .replace('{old}', entry.details.changes.name.old)
+              .replace('{new}', entry.details.changes.name.new));
           }
           if (entry.details.changes.environment?.old && entry.details.changes.environment?.new) {
-            changes.push(`environnement modifié de "${entry.details.changes.environment.old}" à "${entry.details.changes.environment.new}"`);
+            changes.push(t('history.details.environmentChanged')
+              .replace('{old}', entry.details.changes.environment.old)
+              .replace('{new}', entry.details.changes.environment.new));
           }
           if (entry.details.changes.is_active !== undefined) {
             const oldValue = entry.details.changes.is_active?.old;
             const newValue = entry.details.changes.is_active?.new;
             if (oldValue !== undefined && newValue !== undefined) {
-              changes.push(`statut modifié à ${newValue ? 'actif' : 'inactif'}`);
+              changes.push(t('history.details.statusChanged')
+                .replace('{status}', newValue ? t('history.details.active') : t('history.details.inactive')));
             }
           }
-          return changes.length > 0 ? changes.join(', ') : 'Clé API modifiée';
+          return `${keyPrefix}${changes.length > 0 ? changes.join(', ') : t('history.details.updated')}`;
         }
-        return 'Clé API modifiée';
+        return `${keyPrefix}${t('history.details.updated')}`;
       case 'deleted':
-        return 'Clé API supprimée';
+        return `${keyPrefix}${t('history.details.deleted')}`;
       case 'viewed':
-        return 'Clé API consultée';
+        return `${keyPrefix}${t('history.details.viewed')}`;
       case 'rotated':
-        return 'Clé API renouvelée';
+        return `${keyPrefix}${t('history.details.rotated')}`;
       default:
-        return '';
+        return keyName || '';
     }
   };
 
@@ -146,15 +161,17 @@ const History: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <span className="ml-2 text-gray-600 dark:text-gray-300">{t('history.loading')}</span>
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Historique des actions</h1>
-      </div>
+      <PageTitle 
+        title={t('history.title')} 
+        icon={<HistoryIcon className="h-6 w-6" />} 
+      />
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
         <div className="overflow-x-auto">
@@ -162,19 +179,19 @@ const History: React.FC = () => {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Date
+                  {t('history.date')}
                 </th>
                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Action
+                  {t('history.action')}
                 </th>
                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Projet
+                  {t('history.project')}
                 </th>
                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Environnement
+                  {t('history.environment')}
                 </th>
                 <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Détails
+                  {t('history.details')}
                 </th>
               </tr>
             </thead>
@@ -191,7 +208,7 @@ const History: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
-                      {entry.project_name || 'Projet par défaut'}
+                      {entry.project_name || t('history.defaultProject')}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -202,8 +219,8 @@ const History: React.FC = () => {
                         ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
                         : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                     }`}>
-                      {entry.environment === 'production' ? 'Production' :
-                       entry.environment === 'staging' ? 'Test' : 'Développement'}
+                      {entry.environment === 'production' ? t('history.environment.production') :
+                       entry.environment === 'staging' ? t('history.environment.staging') : t('history.environment.development')}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">

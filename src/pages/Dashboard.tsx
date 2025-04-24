@@ -2,20 +2,29 @@ import React, { useState, useEffect } from 'react';
 import StatCard from '../components/StatCard';
 import KeyTable, { KeyData } from '../components/KeyTable';
 import SearchFilter from '../components/SearchFilter';
-import { 
+import {
+  EyeIcon,
+  EyeOffIcon, 
   KeyIcon, 
   FolderIcon, 
-  AlertIcon 
+  AlertIcon,
+  HomeIcon
 } from '../components/Icons';
+import NewKeyModal from '../components/NewKeyModal';
+import PageTitle from '../components/PageTitle';
 import supabase from '../lib/db';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
+import eventBus from '../utils/eventBus';
 
 interface DashboardProps {
   onNewKey: () => void;
   onNavigate: (page: 'dashboard' | 'projects' | 'history' | 'settings') => void;
 }
 
-interface ApiKeyData {
+// Interface pour les données brutes des clés API reçues de la base de données
+interface ApiKeyResponse {
   id: string;
   name: string;
   key_value: string;
@@ -26,7 +35,7 @@ interface ApiKeyData {
   is_active: boolean;
   project: {
     name: string;
-  } | null;
+  }[] | null;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
@@ -37,8 +46,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [projectCount, setProjectCount] = useState(0);
-  const keysPerPage = 10;
+  const keysPerPage = 8;
   const { user } = useAuth();
+  const { t } = useLanguage();
+  const { settings } = useSettings(); // Utiliser la fonction de traduction
 
   useEffect(() => {
     if (user) {
@@ -46,6 +57,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
       fetchProjectCount();
     }
   }, [user]);
+
+  // Écouter les événements de mise à jour des clés
+  useEffect(() => {
+    // Fonction de rappel pour recharger les données
+    const handleKeyUpdated = () => {
+      console.log('Événement de mise à jour des clés reçu dans Dashboard');
+      fetchApiKeys();
+      fetchProjectCount();
+    };
+    
+    // S'abonner à l'événement
+    eventBus.on('key_updated', handleKeyUpdated);
+    
+    // Se désabonner lors du démontage du composant
+    return () => {
+      eventBus.off('key_updated', handleKeyUpdated);
+    };
+  }, []);
 
   const fetchProjectCount = async () => {
     try {
@@ -64,6 +93,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
 
   const fetchApiKeys = async () => {
     try {
+      // Récupérer d'abord tous les projets
+      const { data: projects, error: projectsError } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('created_by', user?.id)
+        .is('archived_at', null);
+        
+      if (projectsError) {
+        throw projectsError;
+      }
+      
+      // Ensuite récupérer les clés API
       const { data: apiKeys, error } = await supabase
         .from('api_keys')
         .select(`
@@ -74,8 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
           expires_at,
           provider,
           environment,
-          is_active,
-          project:projects(name)
+          is_active
         `)
         .eq('created_by', user?.id)
         .eq('is_active', true);
@@ -84,19 +124,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
         throw error;
       }
 
-      const formattedKeys: KeyData[] = (apiKeys as ApiKeyData[]).map(key => ({
-        id: key.id,
-        name: key.name,
-        key: key.key_value,
-        project: key.project?.name || 'Projet par défaut',
-        project_id: key.project_id,
-        expirationDate: key.expires_at ? 
-          new Date(key.expires_at).toLocaleDateString('fr-FR') : 
-          new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR'),
-        provider: key.provider,
-        environment: key.environment,
-        isActive: key.is_active
-      }));
+      const formattedKeys: KeyData[] = (apiKeys as ApiKeyResponse[]).map(key => {
+        // Trouver le projet correspondant à la clé
+        const projectName = projects && projects.length > 0
+          ? projects.find(p => p.id === key.project_id)?.name || t('dashboard.defaultProject')
+          : t('dashboard.defaultProject');
+          
+        return {
+          id: key.id,
+          name: key.name,
+          key: key.key_value,
+          project: projectName,
+          project_id: key.project_id,
+          expirationDate: key.expires_at ? 
+            new Date(key.expires_at).toLocaleDateString('fr-FR') : 
+            new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR'),
+          provider: key.provider,
+          environment: key.environment,
+          isActive: key.is_active
+        };
+      });
 
       setKeys(formattedKeys);
       setFilteredKeys(formattedKeys);
@@ -157,11 +204,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
         const expirationDate = new Date(key.expirationDate.split('/').reverse().join('-'));
         const daysUntilExpiration = Math.ceil((expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         
-        const expiredMatch = filters.includes('expired') && daysUntilExpiration <= 0;
-        const thirtyDaysMatch = filters.includes('30days') && daysUntilExpiration > 0 && daysUntilExpiration <= 30;
-        const futureMatch = filters.includes('future') && daysUntilExpiration > 30;
+        // Utiliser le seuil d'expiration configuré par l'utilisateur
+        const threshold = settings.expirationThreshold;
         
-        return projectMatch || expiredMatch || thirtyDaysMatch || futureMatch;
+        const expiredMatch = filters.includes('expired') && daysUntilExpiration <= 0;
+        const thresholdMatch = filters.includes('30days') && daysUntilExpiration > 0 && daysUntilExpiration <= threshold;
+        const futureMatch = filters.includes('future') && daysUntilExpiration > threshold;
+        
+        return projectMatch || expiredMatch || thresholdMatch || futureMatch;
       });
     }
     
@@ -187,39 +237,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <span className="ml-3">{t('dashboard.loadingKeys')}</span>
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Mes clés API</h1>
-        <button 
-          onClick={onNewKey}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg"
-        >
-          + Nouvelle clé
-        </button>
-      </div>
+      <PageTitle 
+        title={t('dashboard.title')} 
+        icon={<HomeIcon className="h-6 w-6" />}
+        actions={
+          <button 
+            onClick={onNewKey}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg"
+          >
+            + {t('dashboard.addNewKey')}
+          </button>
+        } 
+      />
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <StatCard 
-          title="Clés actives" 
+          title={t('dashboard.activeKeys')} 
           value={activeKeysCount}
           icon={<KeyIcon className="h-6 w-6 text-white" />}
           bgColor="bg-indigo-600"
         />
         <div onClick={() => onNavigate('projects')} className="cursor-pointer">
           <StatCard 
-            title="Projets" 
+            title={t('dashboard.projects')} 
             value={projectCount}
             icon={<FolderIcon className="h-6 w-6 text-white" />}
             bgColor="bg-green-600"
           />
         </div>
         <StatCard 
-          title="Clés expirées" 
+          title={t('dashboard.expiringSoon')} 
           value={expiredKeysCount}
           icon={<AlertIcon className="h-6 w-6 text-white" />}
           bgColor="bg-red-600"
@@ -230,6 +284,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNewKey, onNavigate }) => {
         <SearchFilter 
           onSearch={handleSearch}
           onFilter={handleFilter}
+          onNewKey={onNewKey}
         />
       </div>
       

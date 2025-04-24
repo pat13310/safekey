@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { EditIcon, TrashIcon, ViewIcon, CopyIcon, AlertIcon } from './Icons';
-import { toast } from 'sonner';
+import { EditIcon, TrashIcon, ViewIcon, CopyIcon, AlertIcon, EyeOffIcon } from './Icons';
 import supabase from '../lib/db';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
+import { showNotification, NotificationType } from '../utils/notifications';
 
 export interface KeyData {
   id: string;
@@ -12,6 +14,9 @@ export interface KeyData {
   environment?: string;
   key_type?: string;
   project_id?: string;
+  provider?: string | null;
+  isActive?: boolean;
+  copied?: boolean; // Pour indiquer si la clé a été copiée récemment
 }
 
 interface KeyTableProps {
@@ -45,8 +50,12 @@ const KeyTable: React.FC<KeyTableProps> = ({
   onDeleteKey,
   onUpdate,
 }) => {
+  const { t } = useLanguage(); // Utiliser la fonction de traduction
+  const { settings } = useSettings(); // Récupérer les paramètres
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+  // copiedKey est utilisé pour l'animation visuelle lors de la copie
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
     null
   );
@@ -62,7 +71,6 @@ const KeyTable: React.FC<KeyTableProps> = ({
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNewProjectInput, setShowNewProjectInput] = useState(false);
   const [newProject, setNewProject] = useState('');
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   useEffect(() => {
     if (showEditModal || showKeyDetails) {
@@ -71,10 +79,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
   }, [showEditModal, showKeyDetails]);
 
   useEffect(() => {
-    if (editFormData.project_id && !showNewProjectInput) {
-      const project = projects.find((p) => p.id === editFormData.project_id);
-      setSelectedProject(project || null);
-    }
+    // Effet pour gérer le changement de projet sélectionné
   }, [editFormData.project_id, projects, showNewProjectInput]);
 
   const fetchProjects = async () => {
@@ -89,7 +94,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
       setProjects(projectsData || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
-      toast.error('Erreur lors du chargement des projets');
+      showNotification.error(settings, t('dashboard.loadingError'), NotificationType.GENERAL);
     }
   };
 
@@ -112,36 +117,41 @@ const KeyTable: React.FC<KeyTableProps> = ({
 
     if (daysUntilExpiration < 0) {
       return {
-        text: 'Expirée',
+        text: t('dashboard.expired'),
         className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
       };
     } else if (daysUntilExpiration <= 30) {
       return {
-        text: `Expire dans ${daysUntilExpiration} jour${
-          daysUntilExpiration > 1 ? 's' : ''
-        }`,
+        text: t('dashboard.expiresIn').replace('{days}', daysUntilExpiration.toString()),
         className:
           'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
       };
     } else {
       return {
-        text: `Expire dans ${daysUntilExpiration} jours`,
+        text: t('dashboard.expiresIn').replace('{days}', daysUntilExpiration.toString()),
         className:
           'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
       };
     }
   };
 
-  const handleCopyKey = async (key: string) => {
-    try {
-      await navigator.clipboard.writeText(key);
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey(null), 2000);
-      toast.success('Clé copiée dans le presse-papier');
-    } catch (err) {
-      console.error('Failed to copy key:', err);
-      toast.error('Erreur lors de la copie de la clé');
-    }
+  const handleCopyKey = (key: string, keyId: string) => {
+    navigator.clipboard.writeText(key);
+    showNotification.success(settings, t('dashboard.keyCopied'), NotificationType.GENERAL);
+    
+    // Activer l'effet visuel vert
+    setCopiedKeyId(keyId);
+    
+    // Désactiver l'effet après 2 secondes
+    setTimeout(() => {
+      setCopiedKeyId(null);
+    }, 2000);
+  };
+
+  const toggleKeyVisibility = (keyId: string) => {
+    setVisibleKeys((prev) =>
+      prev.includes(keyId) ? prev.filter((id) => id !== keyId) : [...prev, keyId]
+    );
   };
 
   const handleDelete = (id: string) => {
@@ -152,8 +162,8 @@ const KeyTable: React.FC<KeyTableProps> = ({
     const keyToDelete = keys.find((k) => k.id === id);
     onDeleteKey(id);
     setShowDeleteConfirm(null);
-    toast.success('Clé API supprimée', {
-      description: `La clé "${keyToDelete?.name}" a été supprimée avec succès.`,
+    showNotification.success(settings, t('dashboard.keyDeleted'), NotificationType.GENERAL, {
+      description: `${t('dashboard.keyDeletedDesc')} "${keyToDelete?.name}"`,
     });
   };
 
@@ -185,7 +195,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
       setShowEditModal(true);
     } catch (error) {
       console.error('Error preparing edit form:', error);
-      toast.error('Erreur lors de la préparation du formulaire');
+      showNotification.error(settings, t('dashboard.prepareEditError'), NotificationType.GENERAL);
     }
   };
 
@@ -229,15 +239,14 @@ const KeyTable: React.FC<KeyTableProps> = ({
         onUpdate();
       }
 
-      toast.success('Clé API modifiée avec succès');
+      showNotification.success(settings, t('dashboard.keyUpdated'), NotificationType.GENERAL);
       setShowEditModal(false);
       setEditingKey(null);
       setNewProject('');
       setShowNewProjectInput(false);
-      setSelectedProject(null);
     } catch (error) {
       console.error('Error updating API key:', error);
-      toast.error('Erreur lors de la modification de la clé');
+      showNotification.error(settings, t('dashboard.updateError'), NotificationType.GENERAL);
     }
   };
 
@@ -246,21 +255,13 @@ const KeyTable: React.FC<KeyTableProps> = ({
     if (value === 'new') {
       setShowNewProjectInput(true);
       setEditFormData((prev) => ({ ...prev, project_id: '' }));
-      setSelectedProject(null);
     } else {
       setShowNewProjectInput(false);
       setEditFormData((prev) => ({ ...prev, project_id: value }));
-      const project = projects.find((p) => p.id === value);
-      setSelectedProject(project || null);
     }
   };
 
-  const getProjectName = (projectId: string) => {
-    if (projectId === '00000000-0000-0000-0000-000000000000') {
-      return 'Projet par défaut';
-    }
-    return projects.find((p) => p.id === projectId)?.name || 'Projet inconnu';
-  };
+  // Fonction supprimée car non utilisée
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -290,13 +291,13 @@ const KeyTable: React.FC<KeyTableProps> = ({
                 scope="col"
                 className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-[15%]"
               >
-                Expiration
+                {t('dashboard.expiration')}
               </th>
               <th
                 scope="col"
                 className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-[10%]"
               >
-                Actions
+                {t('dashboard.actions')}
               </th>
             </tr>
           </thead>
@@ -327,27 +328,45 @@ const KeyTable: React.FC<KeyTableProps> = ({
                     <div className="flex items-center space-x-1">
                       <div className="flex-1 min-w-0">
                         <div
-                          className="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-50 dark:bg-gray-700/50 px-2 py-1 rounded cursor-pointer group relative"
-                          onMouseEnter={() => setHoveredKey(keyData.key)}
+                          className={`text-xs ${copiedKeyId === keyData.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'} font-mono ${copiedKeyId === keyData.id ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-700/50'} px-2 py-1 rounded cursor-pointer group relative transition-colors duration-200`}
+                          onMouseEnter={() => visibleKeys.includes(keyData.id) || !settings.hideApiKeys ? setHoveredKey(keyData.key) : null}
                           onMouseLeave={() => setHoveredKey(null)}
                         >
                           <div className="truncate max-w-[200px]">
-                            {keyData.key}
+                            {visibleKeys.includes(keyData.id) || !settings.hideApiKeys 
+                              ? keyData.key 
+                              : <>
+                                  <span>{keyData.key.substring(0, 4)}</span>
+                                  <span className="filter blur-sm select-none">{keyData.key.substring(4, keyData.key.length - 4)}</span>
+                                  <span>{keyData.key.substring(keyData.key.length - 4)}</span>
+                                </>
+                            }
                           </div>
-                          {hoveredKey === keyData.key && (
+                          {hoveredKey === keyData.key && (visibleKeys.includes(keyData.id) || !settings.hideApiKeys) && (
                             <div className="absolute left-0 right-0 -bottom-8 bg-gray-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 whitespace-normal break-all ">
                               {keyData.key}
                             </div>
                           )}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleCopyKey(keyData.key)}
-                        className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-900"
-                        title="Copier"
-                      >
-                        <CopyIcon className="h-4 w-4" />
-                      </button>
+                      <div className="flex space-x-1">
+                        {/* Toujours afficher le bouton, même si l'option de masquage est désactivée */}
+                        <button
+                          onClick={() => toggleKeyVisibility(keyData.id)}
+                          className={`flex-shrink-0 p-1 ${!settings.hideApiKeys && !visibleKeys.includes(keyData.id) ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'} rounded hover:bg-gray-100 dark:hover:bg-gray-900`}
+                          title={visibleKeys.includes(keyData.id) ? "Masquer" : "Afficher"}
+                          disabled={!settings.hideApiKeys && !visibleKeys.includes(keyData.id)}
+                        >
+                          {visibleKeys.includes(keyData.id) ? <EyeOffIcon className="h-4 w-4" /> : <ViewIcon className="h-4 w-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleCopyKey(keyData.key, keyData.id)}
+                          className={`flex-shrink-0 p-1 ${copiedKeyId === keyData.id ? 'text-green-500 dark:text-green-400 bg-green-50 dark:bg-green-900/20' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-900'} rounded transition-colors duration-200`}
+                          title="Copier"
+                        >
+                          <CopyIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </td>
                   <td className="px-3 py-2">
@@ -396,6 +415,11 @@ const KeyTable: React.FC<KeyTableProps> = ({
               );
             })}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={5} className="h-8"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
@@ -411,7 +435,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
                 : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 border border-gray-300 dark:border-gray-600'
             }`}
           >
-            Précédent
+            {t('dashboard.previous')}
           </button>
 
           {Array.from(
@@ -440,7 +464,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
                 : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 border border-gray-300 dark:border-gray-600'
             }`}
           >
-            Suivant
+            {t('dashboard.next')}
           </button>
         </div>
       </div>
@@ -450,11 +474,10 @@ const KeyTable: React.FC<KeyTableProps> = ({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Confirmer la suppression
+              {t('dashboard.confirmDelete')}
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-6">
-              Êtes-vous sûr de vouloir supprimer cette clé API ? Cette action
-              est irréversible.
+              {t('dashboard.confirmDeleteMessage')}
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -467,7 +490,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
                 onClick={() => confirmDelete(showDeleteConfirm)}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
               >
-                Supprimer
+                {t('dashboard.delete')}
               </button>
             </div>
           </div>
@@ -480,7 +503,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Détails de la clé API
+                {t('dashboard.keyDetails')}
               </h3>
               <button
                 onClick={() => setShowKeyDetails(null)}
@@ -503,18 +526,19 @@ const KeyTable: React.FC<KeyTableProps> = ({
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Clé API
+                      {t('dashboard.apiKey')}
                     </label>
                     <div className="flex items-center space-x-2">
                       <p className="flex-1 text-gray-900 dark:text-white font-mono bg-gray-50 dark:bg-gray-700/50 p-2 rounded-md truncate">
                         {keys.find((k) => k.id === showKeyDetails)?.key}
                       </p>
                       <button
-                        onClick={() =>
-                          handleCopyKey(
-                            keys.find((k) => k.id === showKeyDetails)?.key || ''
-                          )
-                        }
+                        onClick={() => {
+                          const key = keys.find((k) => k.id === showKeyDetails);
+                          if (key) {
+                            handleCopyKey(key.key, key.id);
+                          }
+                        }}
                         className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md hover:bg-gray-100 dark:hover:bg-gray-900 flex-shrink-0"
                         title="Copier"
                       >
@@ -532,7 +556,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Statut d'expiration
+                      {t('dashboard.expirationStatus')}
                     </label>
                     {(() => {
                       const key = keys.find((k) => k.id === showKeyDetails);
@@ -562,7 +586,7 @@ const KeyTable: React.FC<KeyTableProps> = ({
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                Modifier la clé API
+                {t('dashboard.editKey')}
               </h2>
               <button
                 onClick={() => setShowEditModal(false)}

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Toaster, toast } from 'sonner';
+import { useState } from 'react';
+import { Toaster } from 'sonner';
+import { showNotification, NotificationType } from './utils/notifications';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
@@ -10,6 +11,10 @@ import AuthModal from './components/Auth';
 import Landing from './components/Landing';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext';
+// Fournisseur de langue pour l'internationalisation
+import { LanguageProvider } from './contexts/LanguageContext';
+// Utilisé pour la communication entre composants
 
 // Import static pages
 import Features from './pages/static/Features';
@@ -25,6 +30,7 @@ type Page = 'dashboard' | 'projects' | 'history' | 'settings' |
 function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedProjectType, setSelectedProjectType] = useState<'production' | 'development' | 'staging' | null | undefined>();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   
@@ -34,20 +40,31 @@ function AppContent() {
     setSidebarOpen(!sidebarOpen);
   };
 
-  const handleNewKey = (data: { name: string; key: string; project?: string }) => {
+  const { settings } = useSettings();
+
+  const handleNewKey = (data: { name: string; key: string; project?: string; projectType: string }) => {
     console.log('New key data:', data);
-    toast.success('Nouvelle clé API créée avec succès !', {
-      description: `La clé "${data.name}" a été ajoutée au projet ${data.project || 'Sans projet'}`,
-    });
+    showNotification.success(
+      settings,
+      'Nouvelle clé API créée avec succès !',
+      NotificationType.NEW_KEY,
+      {
+        description: `La clé "${data.name}" a été ajoutée au projet ${data.project || 'Sans projet'}`,
+      }
+    );
+    
+    // La mise à jour des données est maintenant gérée par le système d'événements
+    // L'événement 'key_updated' est émis directement par NewKeyModal
+    
     setIsModalOpen(false);
   };
 
   const handleSignOut = async () => {
     try {
       await signOut();
-      toast.success('Déconnexion réussie');
+      showNotification.success(settings, 'Déconnexion réussie', NotificationType.LOGIN);
     } catch (error) {
-      toast.error('Erreur lors de la déconnexion');
+      showNotification.error(settings, 'Erreur lors de la déconnexion', NotificationType.LOGIN);
     }
   };
 
@@ -97,7 +114,10 @@ function AppContent() {
       <Sidebar 
         isOpen={sidebarOpen} 
         toggleSidebar={toggleSidebar} 
-        onNewKey={() => setIsModalOpen(true)}
+        onNewKey={() => {
+          setSelectedProjectType(undefined);
+          setIsModalOpen(true);
+        }}
         onNavigate={setCurrentPage}
         currentPage={currentPage}
         user={user}
@@ -112,6 +132,7 @@ function AppContent() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleNewKey}
+        initialProjectType={selectedProjectType}
       />
     </div>
   );
@@ -121,7 +142,11 @@ function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <AppContent />
+        <LanguageProvider>
+          <SettingsProvider>
+            <AppContent />
+          </SettingsProvider>
+        </LanguageProvider>
       </ThemeProvider>
     </AuthProvider>
   );

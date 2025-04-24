@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   FolderIcon,
   KeyIcon,
   EditIcon,
   TrashIcon,
   CopyIcon,
-} from '../components/Icons';
-import supabase from '../lib/db';
-import { useAuth } from '../context/AuthContext';
-import { toast } from 'sonner';
+} from "../components/Icons";
+import supabase from "../lib/db";
+import { useAuth } from "../context/AuthContext";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toast } from "sonner";
+import eventBus from "../utils/eventBus";
+import PageTitle from "../components/PageTitle";
 
 interface Project {
   id: string;
@@ -42,6 +45,7 @@ const Projects: React.FC = () => {
   const [editProject, setEditProject] = useState({ name: '', description: '' });
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const { t } = useLanguage(); // Utiliser la fonction de traduction
 
   useEffect(() => {
     if (user) {
@@ -49,10 +53,30 @@ const Projects: React.FC = () => {
     }
   }, [user]);
 
+  // Écouter les événements de mise à jour des clés
+  useEffect(() => {
+    // Fonction de rappel pour recharger les données
+    const handleKeyUpdated = () => {
+      console.log('Événement de mise à jour des clés reçu dans Projects');
+      fetchProjects();
+      if (selectedProject) {
+        fetchProjectKeys(selectedProject.id);
+      }
+    };
+    
+    // S'abonner à l'événement
+    eventBus.on('key_updated', handleKeyUpdated);
+    
+    // Se désabonner lors du démontage du composant
+    return () => {
+      eventBus.off('key_updated', handleKeyUpdated);
+    };
+  }, [selectedProject]);
+
   const fetchProjects = async () => {
     try {
       const { data: projectsData, error: projectsError } = await supabase
-        .from('projects')
+        .from("projects")
         .select(
           `
           id,
@@ -61,34 +85,35 @@ const Projects: React.FC = () => {
           created_at,
           updated_at,
           archived_at
-        `
+        `,
         )
-        .eq('created_by', user?.id)
-        .is('archived_at', null);
+        .eq("created_by", user?.id)
+        .is("archived_at", null);
 
       if (projectsError) throw projectsError;
 
       const projectsWithKeyCounts = await Promise.all(
         projectsData.map(async (project) => {
           const { count, error: countError } = await supabase
-            .from('api_keys')
-            .select('id', { count: 'exact' })
-            .eq('project_id', project.id)
-            .eq('is_active', true);
+            .from("api_keys")
+            .select("id", { count: "exact" })
+            .eq("project_id", project.id)
+            .eq("is_active", true);
 
           if (countError) throw countError;
 
           return {
             ...project,
             key_count: count || 0,
+            key_type: 'production',
           };
-        })
+        }),
       );
 
       setProjects(projectsWithKeyCounts);
     } catch (error) {
-      console.error('Error fetching projects:', error);
-      toast.error('Erreur lors du chargement des projets');
+      console.error("Error fetching projects:", error);
+      toast.error(t('projects.loadingError'));
     } finally {
       setLoading(false);
     }
@@ -97,17 +122,17 @@ const Projects: React.FC = () => {
   const fetchProjectKeys = async (projectId: string) => {
     try {
       const { data, error } = await supabase
-        .from('api_keys')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+        .from("api_keys")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       setProjectKeys(data || []);
     } catch (error) {
-      console.error('Error fetching project keys:', error);
-      toast.error('Erreur lors du chargement des clés');
+      console.error("Error fetching project keys:", error);
+      toast.error(t('projects.keysLoadingError'));
     }
   };
 
@@ -116,7 +141,7 @@ const Projects: React.FC = () => {
 
     try {
       const { data, error } = await supabase
-        .from('projects')
+        .from("projects")
         .insert([
           {
             name: newProject.name,
@@ -130,12 +155,12 @@ const Projects: React.FC = () => {
       if (error) throw error;
 
       setProjects((prev) => [...prev, { ...data, key_count: 0 }]);
-      setNewProject({ name: '', description: '' });
+      setNewProject({ name: "", description: "" });
       setShowNewProjectModal(false);
-      toast.success(`Projet "${data.name}" créé avec succès`);
+      toast.success(t('projects.createSuccess').replace('{name}', data.name));
     } catch (error) {
-      console.error('Error creating project:', error);
-      toast.error('Erreur lors de la création du projet');
+      console.error("Error creating project:", error);
+      toast.error(t('projects.createError'));
     }
   };
 
@@ -145,12 +170,12 @@ const Projects: React.FC = () => {
 
     try {
       const { error } = await supabase
-        .from('projects')
+        .from("projects")
         .update({
           name: editProject.name,
           description: editProject.description,
         })
-        .eq('id', selectedProject.id);
+        .eq("id", selectedProject.id);
 
       if (error) throw error;
 
@@ -162,32 +187,32 @@ const Projects: React.FC = () => {
                 name: editProject.name,
                 description: editProject.description,
               }
-            : p
-        )
+            : p,
+        ),
       );
       setShowEditProjectModal(false);
-      toast.success(`Projet "${editProject.name}" modifié avec succès`);
+      toast.success(t('projects.updateSuccess').replace('{name}', editProject.name));
     } catch (error) {
-      console.error('Error updating project:', error);
-      toast.error('Erreur lors de la modification du projet');
+      console.error("Error updating project:", error);
+      toast.error(t('projects.updateError'));
     }
   };
 
   const handleDeleteProject = async (projectId: string) => {
     try {
       const { error } = await supabase
-        .from('projects')
+        .from("projects")
         .update({ archived_at: new Date().toISOString() })
-        .eq('id', projectId);
+        .eq("id", projectId);
 
       if (error) throw error;
 
       setProjects((prev) => prev.filter((p) => p.id !== projectId));
       setShowDeleteConfirmModal(false);
-      toast.success('Projet archivé avec succès');
+      toast.success(t('projects.archiveSuccess'));
     } catch (error) {
-      console.error('Error archiving project:', error);
-      toast.error("Erreur lors de l'archivage du projet");
+      console.error("Error archiving project:", error);
+      toast.error(t('projects.archiveError'));
     }
   };
 
@@ -195,7 +220,8 @@ const Projects: React.FC = () => {
     setSelectedProject(project);
     setEditProject({
       name: project.name,
-      description: project.description || '',
+      description: project.description || "",
+      
     });
     setShowEditProjectModal(true);
   };
@@ -212,28 +238,29 @@ const Projects: React.FC = () => {
   };
 
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('fr-FR');
+    // Utiliser la locale de la langue actuelle
+    return new Date(date).toLocaleDateString();
   };
 
   const getEnvironmentBadgeColor = (environment: string) => {
     switch (environment) {
-      case 'production':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'staging':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+      case "production":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "staging":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
       default:
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
     }
   };
 
   const getEnvironmentLabel = (environment: string) => {
     switch (environment) {
-      case 'production':
-        return 'Production';
-      case 'staging':
-        return 'Test';
+      case "production":
+        return t('projects.environmentProduction');
+      case "staging":
+        return t('projects.environmentStaging');
       default:
-        return 'Développement';
+        return t('projects.environmentDevelopment');
     }
   };
 
@@ -247,26 +274,27 @@ const Projects: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-          Mes projets
-        </h1>
-        <button
-          onClick={() => setShowNewProjectModal(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center space-x-2"
-        >
-          <span>+ Nouveau projet</span>
-        </button>
-      </div>
+      <PageTitle 
+        title={t('projects.title')} 
+        icon={<FolderIcon className="h-6 w-6" />}
+        actions={
+          <button
+            onClick={() => setShowNewProjectModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center space-x-2"
+          >
+            <span>+ {t('projects.newProject')}</span>
+          </button>
+        }
+      />
 
       {projects.length === 0 ? (
         <div className="text-center py-12">
           <FolderIcon className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
-            Aucun projet
+            {t('projects.noProjects')}
           </h3>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Commencez par créer un nouveau projet pour organiser vos clés API.
+            {t('projects.noProjectsDesc')}
           </p>
           <div className="mt-6">
             <button
@@ -297,7 +325,7 @@ const Projects: React.FC = () => {
                         {project.name}
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2 h-10">
-                        {project.description || 'Aucune description'}
+                        {project.description || t('projects.noDescription')}
                       </p>
                     </div>
                   </div>
@@ -307,22 +335,24 @@ const Projects: React.FC = () => {
                   <div className="flex items-center space-x-2">
                     <KeyIcon className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {project.key_count} clé{project.key_count > 1 ? 's' : ''}
+                      {project.key_count} {project.key_count > 1 ? t('projects.keysPlural') : t('projects.keys')}
                     </span>
                   </div>
                   <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Modifié le{' '}
-                    {new Date(project.updated_at).toLocaleDateString('fr-FR')}
+                    {t('projects.modified')}{" "}
+                    {formatDate(project.updated_at)}
                   </span>
                 </div>
 
                 <div className="flex space-x-2">
-                  <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                    Production
+                  <span
+                    className={`px-2.5 py-1 text-xs font-medium rounded-full ${getEnvironmentBadgeColor("production")}`}
+                  >
+                    {getEnvironmentLabel("production")}
                   </span>
                   {project.key_count > 0 && (
                     <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                      Actif
+                      {t('projects.active')}
                     </span>
                   )}
                 </div>
@@ -335,7 +365,7 @@ const Projects: React.FC = () => {
                     openEditModal(project);
                   }}
                   className="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors duration-200"
-                  title="Modifier"
+                  title={t('projects.edit')}
                 >
                   <EditIcon className="h-5 w-5" />
                 </button>
@@ -345,7 +375,7 @@ const Projects: React.FC = () => {
                     openDeleteModal(project);
                   }}
                   className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors duration-200"
-                  title="Archiver"
+                  title={t('projects.archive')}
                 >
                   <TrashIcon className="h-5 w-5" />
                 </button>
@@ -370,9 +400,7 @@ const Projects: React.FC = () => {
                       {selectedProject.name}
                     </h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {selectedProject.key_count} clé
-                      {selectedProject.key_count > 1 ? 's' : ''} active
-                      {selectedProject.key_count > 1 ? 's' : ''}
+                      {selectedProject.key_count} {selectedProject.key_count > 1 ? t('projects.keysPlural') : t('projects.keys')} {selectedProject.key_count > 1 ? t('projects.activeKeysPlural') : t('projects.activeKeys')}
                     </p>
                   </div>
                 </div>
@@ -390,19 +418,19 @@ const Projects: React.FC = () => {
                 <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Nom
+                      {t('projects.name')}
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Clé
+                      {t('projects.key')}
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Environnement
+                      {t('projects.environment')}
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Expiration
+                      {t('projects.expiration')}
                     </th>
-                    <th className="text-center px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Fournisseur
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      {t('projects.provider')}
                     </th>
                   </tr>
                 </thead>
@@ -425,7 +453,7 @@ const Projects: React.FC = () => {
                           <button
                             onClick={() => {
                               navigator.clipboard.writeText(key.key_value);
-                              toast.success('Clé copiée dans le presse-papier');
+                              toast.success(t('projects.keyCopied'));
                             }}
                             className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                           >
@@ -436,7 +464,7 @@ const Projects: React.FC = () => {
                       <td className="px-4 py-2">
                         <span
                           className={`px-2 py-0.5 text-[10px] font-thin rounded-full ${getEnvironmentBadgeColor(
-                            key.environment
+                            key.environment,
                           )}`}
                         >
                           {getEnvironmentLabel(key.environment)}
@@ -445,7 +473,7 @@ const Projects: React.FC = () => {
                       <td className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
                         {key.expires_at
                           ? formatDate(key.expires_at)
-                          : "Pas d'expiration"}
+                          : t('projects.noExpiration')}
                       </td>
                       <td className="px-4 py-2">
                         {key.provider && (
@@ -468,7 +496,7 @@ const Projects: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Nouveau projet
+              {t('projects.createNew')}
             </h2>
 
             <form onSubmit={handleCreateProject}>
@@ -478,7 +506,7 @@ const Projects: React.FC = () => {
                     htmlFor="name"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
-                    Nom du projet *
+                    {t('projects.projectName')}
                   </label>
                   <input
                     type="text"
@@ -498,7 +526,7 @@ const Projects: React.FC = () => {
                     htmlFor="description"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
-                    Description
+                    {t('projects.description')}
                   </label>
                   <textarea
                     id="description"
@@ -513,6 +541,8 @@ const Projects: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
+
+
               </div>
 
               <div className="mt-6 flex justify-end space-x-3">
@@ -521,13 +551,13 @@ const Projects: React.FC = () => {
                   onClick={() => setShowNewProjectModal(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
                 >
-                  Annuler
+                  {t('projects.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
                 >
-                  Créer
+                  {t('projects.create')}
                 </button>
               </div>
             </form>
@@ -540,7 +570,7 @@ const Projects: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Modifier le projet
+              {t('projects.editProject')}
             </h2>
 
             <form onSubmit={handleEditProject}>
@@ -550,7 +580,7 @@ const Projects: React.FC = () => {
                     htmlFor="edit-name"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
-                    Nom du projet *
+                    {t('projects.projectName')}
                   </label>
                   <input
                     type="text"
@@ -570,7 +600,7 @@ const Projects: React.FC = () => {
                     htmlFor="edit-description"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
                   >
-                    Description
+                    {t('projects.description')}
                   </label>
                   <textarea
                     id="edit-description"
@@ -585,6 +615,8 @@ const Projects: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
+
+
               </div>
 
               <div className="mt-6 flex justify-end space-x-3">
@@ -593,13 +625,13 @@ const Projects: React.FC = () => {
                   onClick={() => setShowEditProjectModal(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
                 >
-                  Annuler
+                  {t('projects.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
                 >
-                  Enregistrer
+                  {t('projects.save')}
                 </button>
               </div>
             </form>
@@ -612,24 +644,23 @@ const Projects: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Archiver le projet
+              {t('projects.deleteProject')}
             </h2>
             <p className="text-gray-500 dark:text-gray-400 mb-6">
-              Êtes-vous sûr de vouloir archiver le projet "
-              {selectedProject.name}" ? Cette action est irréversible.
+              {t('projects.confirmDeleteDesc')}
             </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowDeleteConfirmModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
               >
-                Annuler
+                {t('projects.cancel')}
               </button>
               <button
                 onClick={() => handleDeleteProject(selectedProject.id)}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md"
               >
-                Archiver
+                {t('projects.confirmArchive')}
               </button>
             </div>
           </div>

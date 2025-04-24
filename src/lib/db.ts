@@ -1,10 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error("Missing Supabase environment variables");
 }
 
 // Create the Supabase client with additional options for better error handling
@@ -12,8 +12,14 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true
-  }
+    detectSessionInUrl: true,
+  },
+  // Configuration multilingue
+  global: {
+    headers: {
+      'Accept-Language': 'fr,en,es',  // Support du français, anglais et espagnol
+    },
+  },
 });
 
 // Types
@@ -31,7 +37,7 @@ export interface ProjectMember {
   id: string;
   project_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'member';
+  role: "owner" | "admin" | "member";
   created_at: Date;
 }
 
@@ -46,15 +52,21 @@ export interface ApiKey {
   expires_at: Date | null;
   last_used_at: Date | null;
   is_active: boolean;
-  key_type: 'development' | 'staging' | 'production';
+  key_type:
+    | "Site e-commerce"
+    | "API interne"
+    | "Application mobile"
+    | "Divers"
+    | null;
   provider: string | null;
-  environment: 'development' | 'staging' | 'production';
+  environment: "development" | "staging" | "production" | null;
+  // La propriété language a été supprimée car elle n'existe pas dans la table api_keys
 }
 
 export interface KeyHistory {
   id: string;
   api_key_id: string;
-  action: 'created' | 'updated' | 'deleted' | 'viewed' | 'rotated';
+  action: "created" | "updated" | "deleted" | "viewed" | "rotated";
   performed_by: string;
   performed_at: Date;
   details: Record<string, any> | null;
@@ -64,9 +76,11 @@ export interface KeyHistory {
 
 // Database queries
 export const queries = {
-  createApiKey: async (apiKeyData: Omit<ApiKey, 'id' | 'created_at' | 'updated_at'>) => {
+  createApiKey: async (
+    apiKeyData: Omit<ApiKey, "id" | "created_at" | "updated_at">
+  ) => {
     const { data, error } = await supabase
-      .from('api_keys')
+      .from("api_keys")
       .insert([apiKeyData])
       .select()
       .single();
@@ -77,9 +91,11 @@ export const queries = {
     return data;
   },
 
-  addKeyHistory: async (historyData: Omit<KeyHistory, 'id' | 'performed_at'>) => {
+  addKeyHistory: async (
+    historyData: Omit<KeyHistory, "id" | "performed_at">
+  ) => {
     const { data, error } = await supabase
-      .from('key_history')
+      .from("key_history")
       .insert([historyData])
       .select()
       .single();
@@ -89,39 +105,113 @@ export const queries = {
     }
     return data;
   },
+  
+  // Fonction spécifique pour supprimer l'historique des clés d'un utilisateur
+  clearKeyHistory: async (userId: string) => {
+    if (!userId) {
+      throw new Error("ID utilisateur requis");
+    }
+    
+    try {
+      // 1. Récupérer les clés API de l'utilisateur avec leur nom pour un meilleur affichage
+      const { data: userApiKeys, error: apiKeysError } = await supabase
+        .from("api_keys")
+        .select("id, name, project_id")
+        .eq("created_by", userId);
+      
+      if (apiKeysError) {
+        throw apiKeysError;
+      }
+      
+      console.log(`${userApiKeys.length} clés API trouvées pour l'utilisateur`);
+      
+      // 2. Récupérer les entrées d'historique pour ces clés
+      const { data: historyEntries, error: historyError } = await supabase
+        .from("key_history")
+        .select("id, api_key_id, action, performed_at")
+        .eq("performed_by", userId);
+      
+      if (historyError) {
+        throw historyError;
+      }
+      
+      console.log(`${historyEntries?.length || 0} entrées d'historique trouvées pour l'utilisateur`);
+      
+      // 3. Supprimer toutes les entrées d'historique de l'utilisateur
+      const { error: deleteError } = await supabase
+        .from("key_history")
+        .delete()
+        .eq("performed_by", userId);
+      
+      if (deleteError) {
+        console.error("Erreur lors de la suppression de l'historique:", deleteError);
+        throw deleteError;
+      }
+      
+      // 4. Préparer un résumé des clés et de leur historique pour l'affichage
+      const keySummary = userApiKeys.map(key => {
+        const keyHistory = historyEntries?.filter(entry => entry.api_key_id === key.id) || [];
+        return {
+          id: key.id,
+          nom: key.name,
+          projet: key.project_id,
+          actions: keyHistory.length
+        };
+      });
+      
+      // Calculer les statistiques de suppression
+      const totalEntries = historyEntries?.length || 0;
+      
+      return { 
+        success: true, 
+        stats: { 
+          totalKeys: userApiKeys.length,
+          totalHistoryEntries: totalEntries,
+          successCount: totalEntries, // Nombre d'entrées supprimées avec succès
+          errorCount: 0, // Pas d'erreurs si on arrive ici
+          keySummary: keySummary
+        } 
+      };
+    } catch (error) {
+      console.error("Erreur lors de la suppression de l'historique:", error);
+      throw error;
+    }
+  },
 
   // User management
   createDemoUser: async () => {
     try {
       // Try to sign in first
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: 'demo@example.com',
-        password: 'demo@2025',
+        email: "demo@example.com",
+        password: "demo@2025",
       });
 
       // Only create a new user if sign in fails with user not found
-      if (signInError && signInError.message.includes('Invalid login credentials')) {
+      if (
+        signInError &&
+        signInError.message.includes("Invalid login credentials")
+      ) {
         const { data, error } = await supabase.auth.signUp({
-          email: 'demo@example.com',
-          password: 'demo@2025',
+          email: "demo@example.com",
+          password: "demo@2025",
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
-          }
+          },
         });
 
         if (error) {
-          console.error('Error creating demo user:', error);
-          throw error;
+          console.error("Error creating demo user:", error);
+          return { success: false, error };
         }
-        return data;
+
+        return { success: true, data };
       }
-      
-      // If sign in was successful or failed for other reasons, return silently
-      return null;
+
+      return { success: true };
     } catch (error) {
-      console.error('Error in createDemoUser:', error);
-      // Don't throw the error here to prevent app crashes
-      return null;
+      console.error("Error in createDemoUser:", error);
+      return { success: false, error };
     }
   },
 
@@ -132,23 +222,20 @@ export const queries = {
         password,
       });
 
-      if (error) {
-        console.error('Sign in error:', error);
-        throw error;
-      }
-      return data;
+      if (error) throw error;
+      return { success: true, data };
     } catch (error) {
-      console.error('Error in signIn:', error);
-      throw error;
+      console.error("Error signing in:", error);
+      return { success: false, error };
     }
-  }
+  },
 };
 
 // Create demo user on initialization if it doesn't exist
 // Wrap in a setTimeout to ensure DOM is fully loaded
 setTimeout(() => {
-  queries.createDemoUser().catch(error => {
-    console.error('Error handling demo user:', error);
+  queries.createDemoUser().catch((error) => {
+    console.error("Error handling demo user:", error);
   });
 }, 1000);
 

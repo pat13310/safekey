@@ -1,3 +1,404 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Forcer les couleurs des cases à cocher */
+input[type="checkbox"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  border: 2px solid #d1d5db !important;
+  border-radius: 4px !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-right: 8px !important;
+  vertical-align: middle !important;
+}
+
+input[type="checkbox"]:checked {
+  background-color: #4f46e5 !important; /* indigo-600 */
+  border-color: #4f46e5 !important;
+}
+
+input[type="checkbox"]:checked::after {
+  content: "" !important;
+  position: absolute !important;
+  width: 10px !important;
+  height: 5px !important;
+  border-left: 2px solid white !important;
+  border-bottom: 2px solid white !important;
+  transform: rotate(-45deg) !important;
+  top: 5px !important;
+  left: 4px !important;
+}
+
+input[type="checkbox"]:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3) !important;
+}
+
+/* Styles pour les cases à cocher désactivées */
+input[type="checkbox"]:disabled {
+  background-color: #f3f4f6 !important; /* gray-100 */
+  border-color: #d1d5db !important; /* gray-300 */
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+}
+
+input[type="checkbox"]:disabled:checked {
+  background-color: #c7d2fe !important; /* indigo-200 */
+  border-color: #a5b4fc !important; /* indigo-300 */
+}
+
+/* Adaptation au mode sombre */
+.dark input[type="checkbox"] {
+  background-color: #1f2937 !important; /* gray-800 */
+  border-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark input[type="checkbox"]:checked {
+  background-color: #6366f1 !important; /* indigo-500 */
+  border-color: #6366f1 !important;
+}
+
+.dark input[type="checkbox"]:disabled {
+  background-color: #374151 !important; /* gray-700 */
+  border-color: #4b5563 !important; /* gray-600 */
+  opacity: 0.6 !important;
+}
+
+.dark input[type="checkbox"]:disabled:checked {
+  background-color: #818cf8 !important; /* indigo-400 */
+  border-color: #818cf8 !important;
+  opacity: 0.5 !important;
+}
+
+/* Styles pour les curseurs de type range */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 50%;
+  height: 5px;
+  background-color: #e5e7eb !important; /* gray-200 */
+  border: 1px solid #7f7f81 !important;
+  border-radius: 9999px !important;
+  outline: none !important;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px !important;
+  height: 16px !important;
+  background-color: #392ff2 !important; /* indigo-600 */
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  border: white 1px solid !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  background-color: #4f46e5 !important; /* indigo-600 */
+  border-radius: 50% !important;
+  cursor: pointer !important;
+  border: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Adaptation au mode sombre */
+.dark input[type="range"] {
+  background-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark input[type="range"]::-webkit-slider-thumb {
+  background-color: #6366f1 !important; /* indigo-500 */
+}
+
+.dark input[type="range"]::-moz-range-thumb {
+  background-color: #6366f1 !important; /* indigo-500 */
+}
+
+/* Styles pour les contrôles de type spinner (input number) */
+input[type="number"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 60px !important;
+  height: 32px !important;
+  background-color: #f9fafb !important; /* gray-50 */
+  border: 1px solid #4f46e5 !important; /* gray-300 */
+  border-radius: 6px !important;
+  text-align: center !important;
+  font-size: 14px !important;
+  color: #4f46e5 !important; /* gray-800 */
+  padding: 1px 6px !important;
+}
+
+/* Personnaliser les flèches des contrôles numériques */
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: inner-spin-button;
+  appearance: inner-spin-button;
+  opacity: 1 !important;
+  background-color: #4f46e5 !important;
+  color: white !important;
+  width: 25px !important;
+  border-left: 1px solid #d1d5db !important;
+  margin-right: 0 !important;
+}
+
+/* Styles spécifiques pour Firefox */
+input[type="number"] {
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+/* Créer un conteneur pour les inputs de type number */
+.number-input-container {
+  position: relative;
+  display: inline-block;
+}
+
+.number-input-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 100%;
+  background-color: #4f46e5 !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
+  pointer-events: none !important;
+}
+
+/* Créer un conteneur personnalisé pour les spinners */
+.spinner-container {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  background-color: #f9fafb !important; /* gray-50 */
+  border: 0.5px solid #4f46e5 !important; /* gray-300 */
+}
+
+.spinner-container input[type="number"] {
+  border: none !important;
+  width: 50px !important;
+  text-align: center !important;
+  padding: 0 !important;
+}
+
+.spinner-buttons {
+  display: flex !important;
+  flex-direction: column !important;
+  background-color: #f3f4f6 !important; /* gray-100 */
+  border-left: 1px solid #d1d5db !important; /* gray-300 */
+}
+
+.spinner-up,
+.spinner-down {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  height: 20px !important;
+  cursor: pointer !important;
+  color: #423ae0 !important; /* indigo-600 */
+  font-size: 12px !important;
+  user-select: none !important;
+}
+
+.spinner-up {
+  border-bottom: 0px solid #d1d5db !important; /* gray-300 */
+}
+
+.spinner-up:hover,
+.spinner-down:hover {
+  background-color: #e5e7eb !important; /* gray-200 */
+}
+
+/* Adaptation au mode sombre */
+.dark input[type="number"] {
+  background-color: #1f2937 !important; /* gray-800 */
+  border-color: #4b5563 !important; /* gray-600 */
+  color: #f9fafb !important; /* gray-50 */
+}
+
+.dark .spinner-container {
+  background-color: #1f2937 !important; /* gray-800 */
+  border-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark .spinner-buttons {
+  background-color: #374151 !important; /* gray-700 */
+  border-left-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark .spinner-up,
+.dark .spinner-down {
+  color: #6366f1 !important; /* indigo-500 */
+}
+
+.dark .spinner-up {
+  border-bottom-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark .spinner-up:hover,
+.dark .spinner-down:hover {
+  background-color: #6366f1 !important; /* gray-600 */
+}
+
+/* Styles pour le mode sombre des flèches de contrôle numérique */
+.dark input[type="number"]::-webkit-inner-spin-button {
+  background-color: #6366f1 !important; /* indigo-500 */
+  border-left-color: #d11c2b !important; /* gray-600 */
+}
+
+/* Styles pour le focus des contrôles numériques */
+input[type="number"]:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.3) !important; /* indigo-600 avec opacité */
+  border-color: #4f46e5 !important;
+}
+
+.dark input[type="number"]:focus {
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) !important; /* indigo-500 avec opacité */
+  border-color: #6366f1 !important;
+}
+
+/* Styles pour le focus des conteneurs de spinner */
+.spinner-container:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3) !important;
+  border-color: #4f46e5 !important;
+}
+
+.dark .spinner-container:focus-within {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3) !important;
+  border-color: #6366f1 !important;
+}
+
+/* Styles pour les toggles */
+.toggle-container {
+  display: flex !important;
+  align-items: center !important;
+  margin-bottom: 8px !important;
+}
+
+.toggle-label {
+  font-size: 14px !important;
+  color: #6464ea !important; /* indigo-600 */
+  font-weight: 500 !important;
+  margin-right: 16px !important;
+  margin-left: 16px !important;
+}
+
+.dark .toggle-label {
+  color: #dedee5 !important; /* indigo-500 */
+}
+
+.toggle {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 19px !important;
+  width: 36px !important;
+  border-radius: 9999px !important;
+  border: 0.5px solid #d1d5db !important;
+  transition: background-color 0.2s ease-in-out !important;
+  background-color: #e5e7eb !important; /* gray-200 */
+  cursor: pointer !important;
+}
+
+.toggle.checked {
+  background-color: #4f46e5 !important; /* indigo-600 */
+}
+
+.toggle-thumb {
+  position: absolute !important;
+  height: 12px !important;
+  width: 12px !important;
+  border-radius: 9999px !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  border: 0.5px solid #d1d5db !important;
+  transition: transform 0.2s ease-in-out !important;
+  transform: translateX(4px) !important;
+}
+
+.toggle.checked .toggle-thumb {
+  transform: translateX(20px) !important;
+}
+
+/* Adaptation au mode sombre */
+.dark .toggle {
+  background-color: #4b5563 !important; /* gray-600 */
+}
+
+.dark .toggle.checked {
+  background-color: #6366f1 !important; /* indigo-500 */
+}
+
+/* Styles pour les champs de texte */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea {
+  border: 1px solid #d1d5db !important; /* gray-300 */
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  color: #1f2937 !important; /* gray-800 */
+  background-color: #f9fafb !important; /* gray-50 */
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* Focus pour les champs de texte */
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #4f46e5 !important; /* indigo-600 */
+  box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.3) !important;
+}
+
+/* Adaptation au mode sombre */
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="search"],
+.dark input[type="tel"],
+.dark input[type="url"],
+.dark textarea {
+  background-color: #1f2937 !important; /* gray-800 */
+  border-color: #4b5563 !important; /* gray-600 */
+  color: #f9fafb !important; /* gray-50 */
+}
+
+/* Focus pour les champs de texte en mode sombre */
+.dark input[type="text"]:focus,
+.dark input[type="email"]:focus,
+.dark input[type="password"]:focus,
+.dark input[type="search"]:focus,
+.dark input[type="tel"]:focus,
+.dark input[type="url"]:focus,
+.dark textarea:focus {
+  border-color: #6366f1 !important; /* indigo-500 */
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
+}

@@ -3,23 +3,33 @@ import { toast } from 'sonner';
 import { queries } from '../lib/db';
 import type { ApiKey } from '../lib/db';
 import supabase from '../lib/db';
+import eventBus from '../utils/eventBus';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface Project {
   id: string;
   name: string;
+  key_type?: ApiKey['key_type'];
+  environment?: ApiKey['environment'];
 }
 
 interface NewKeyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; key: string; project?: string; projectType: string }) => void;
+  onSubmit: (data: { name: string; key: string; project?: string; projectType: string; clefType: string }) => void;
+  initialProjectType?: ApiKey['environment'];
+  initialClefType?: ApiKey['key_type'];
 }
 
-const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) => {
+const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit, initialProjectType, initialClefType }) => {
+  const { t } = useLanguage(); // Utiliser la fonction de traduction
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [project, setProject] = useState('');
-  const [projectType, setProjectType] = useState('');
+  const [projectType, setProjectType] = useState(initialProjectType || '');
+  const [clefType, setClefType] = useState(initialClefType || '');
+  // Langue par défaut : français (fr)
+  const [isProjectTypeReadOnly, setIsProjectTypeReadOnly] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<{ isValid: boolean; message: string } | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -29,8 +39,16 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
   useEffect(() => {
     if (isOpen) {
       fetchProjects();
+      // Mettre à jour le type de projet si initialProjectType change
+      if (initialProjectType) {
+        setProjectType(initialProjectType);
+        setClefType(initialClefType || '');
+        setIsProjectTypeReadOnly(true);
+      } else {
+        setIsProjectTypeReadOnly(false);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialProjectType]);
 
   const fetchProjects = async () => {
     try {
@@ -44,7 +62,7 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
       setProjects(projectsData || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
-      toast.error('Erreur lors du chargement des projets');
+      toast.error(t('newKey.loadingError'));
     }
   };
 
@@ -59,20 +77,20 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
       });
       
       if (response.status === 401) {
-        setValidationResult({ isValid: false, message: 'Clé OpenAI invalide ou expirée' });
-        toast.error('Clé OpenAI invalide', {
-          description: 'La clé API fournie est invalide ou a expiré.'
+        setValidationResult({ isValid: false, message: t('newKey.invalidKey') });
+        toast.error(t('newKey.invalidKey'), {
+          description: t('newKey.invalidKeyDesc')
         });
       } else if (response.ok) {
-        setValidationResult({ isValid: true, message: 'Clé OpenAI valide' });
-        toast.success('Clé OpenAI valide', {
-          description: 'La clé API a été validée avec succès.'
+        setValidationResult({ isValid: true, message: t('newKey.validKey') });
+        toast.success(t('newKey.validKey'), {
+          description: t('newKey.validKeyDesc')
         });
       }
     } catch (error) {
-      setValidationResult({ isValid: false, message: 'Erreur lors de la vérification' });
-      toast.error('Erreur de validation', {
-        description: 'Impossible de vérifier la clé API. Veuillez réessayer.'
+      setValidationResult({ isValid: false, message: t('newKey.validationError') });
+      toast.error(t('newKey.validationError'), {
+        description: t('newKey.validationErrorDesc')
       });
     }
     setIsValidating(false);
@@ -93,9 +111,15 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
     if (value === 'new') {
       setShowNewProjectInput(true);
       setProject('');
+      setIsProjectTypeReadOnly(false);
+      setProjectType('');
     } else {
       setShowNewProjectInput(false);
       setProject(value);
+      
+      // Définir le type de projet par défaut à 'production'
+      setProjectType('production');
+      setIsProjectTypeReadOnly(false);
     }
   };
 
@@ -107,6 +131,20 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
       
       if (!user) {
         throw new Error('User not authenticated');
+      }
+      
+      // Vérifier si une clé avec le même nom existe déjà
+      const { data: existingKey } = await supabase
+        .from('api_keys')
+        .select('id')
+        .eq('name', name)
+        .maybeSingle();
+        
+      if (existingKey) {
+        toast.warning('Nom de clé déjà utilisé', {
+          description: `Une clé avec le nom "${name}" existe déjà. Veuillez utiliser un nom différent.`
+        });
+        return;
       }
 
       let projectId = project;
@@ -139,9 +177,10 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
         expires_at: key.startsWith('sk-') ? expirationDate : null,
         last_used_at: null,
         is_active: true,
-        key_type: projectType as 'development' | 'staging' | 'production',
+        key_type: clefType as 'Site e-commerce' | 'API interne' | 'Application mobile',
         provider: key.startsWith('sk-') ? 'openai' : null,
         environment: projectType as 'development' | 'staging' | 'production'
+        // La propriété 'language' a été supprimée car elle n'existe pas dans la table api_keys
       };
 
       const createdKey = await queries.createApiKey(newApiKey);
@@ -152,34 +191,48 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
         performed_by: user.id,
         details: {
           name: createdKey.name,
-          project: projectId ? (showNewProjectInput ? newProject : projects.find(p => p.id === projectId)?.name) : 'Sans projet',
+          project: projectId ? (showNewProjectInput ? newProject : projects.find(p => p.id === projectId)?.name) : t('newKey.noProject'),
           type: projectType
         },
         ip_address: null,
         user_agent: navigator.userAgent
       });
+      
+      // Émettre un événement pour informer les autres composants
+      console.log('Émission de l\'événement key_updated');
+      eventBus.emit('key_updated');
 
       onSubmit({ 
         name, 
         key, 
         project: showNewProjectInput ? newProject : projects.find(p => p.id === project)?.name, 
-        projectType
+        projectType,
+        clefType
       });
       
       setName('');
       setKey('');
       setProject('');
       setProjectType('');
+      setClefType('');
       setNewProject('');
       setShowNewProjectInput(false);
       setValidationResult(null);
       onClose();
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur lors de la création de la clé:', error);
-      toast.error('Erreur de création', {
-        description: 'Une erreur est survenue lors de la création de la clé API.'
-      });
+      
+      // Vérifier si l'erreur est due à une clé dupliquée
+      if (error.code === '23505' && error.message?.includes('api_keys_name_key')) {
+        toast.warning('Nom de clé déjà utilisé', {
+          description: `Une clé avec le nom "${name}" existe déjà. Veuillez utiliser un nom différent.`
+        });
+      } else {
+        toast.error(t('newKey.createError'), {
+          description: t('newKey.createErrorDesc')
+        });
+      }
     }
   };
 
@@ -188,13 +241,13 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Nouvelle clé API</h2>
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">{t('newKey.title')}</h2>
         
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Nom de la clé *
+                {t('newKey.name')}
               </label>
               <input
                 type="text"
@@ -203,13 +256,13 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 required
-                placeholder="ex: API OpenAI Production"
+                placeholder={t('newKey.namePlaceholder')}
               />
             </div>
 
             <div>
               <label htmlFor="key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Valeur de la clé *
+                {t('newKey.value')}
               </label>
               <div className="space-y-2">
                 <input
@@ -221,11 +274,11 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
                     validationResult ? (validationResult.isValid ? 'border-green-500' : 'border-red-500') : 'border-gray-300 dark:border-gray-600'
                   }`}
                   required
-                  placeholder="ex: sk_..."
+                  placeholder={t('newKey.valuePlaceholder')}
                 />
                 {isValidating && (
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Vérification de la clé...
+                    {t('newKey.validating')}
                   </p>
                 )}
                 {validationResult && (
@@ -235,7 +288,7 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
                 )}
                 {key.startsWith('sk-') && (
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Les clés OpenAI expirent automatiquement après 3 mois
+                    {t('newKey.openaiExpiration')}
                   </p>
                 )}
               </div>
@@ -243,7 +296,7 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
 
             <div>
               <label htmlFor="project" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Projet
+                {t('newKey.project')}
               </label>
               <select
                 id="project"
@@ -251,18 +304,18 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
                 onChange={handleProjectChange}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                <option value="">Sélectionner un projet</option>
+                <option value="">{t('newKey.selectProject')}</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
-                <option value="new">+ Nouveau projet</option>
+                <option value="new">{t('newKey.newProject')}</option>
               </select>
             </div>
 
             {showNewProjectInput && (
               <div>
                 <label htmlFor="newProject" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Nom du nouveau projet *
+                  {t('newKey.newProjectName')}
                 </label>
                 <input
                   type="text"
@@ -271,7 +324,7 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
                   onChange={(e) => setNewProject(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   required={showNewProjectInput}
-                  placeholder="ex: Site e-commerce"
+                  placeholder={t('newKey.newProjectPlaceholder')}
                   minLength={3}
                 />
               </div>
@@ -279,21 +332,47 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
 
             <div>
               <label htmlFor="projectType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Type de projet
+                {t('newKey.environment')}
               </label>
               <select
                 id="projectType"
                 value={projectType}
                 onChange={(e) => setProjectType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 ${isProjectTypeReadOnly ? 'bg-gray-100 dark:bg-gray-800' : 'bg-white dark:bg-gray-700'} text-gray-900 dark:text-white`}
+                required
+                disabled={isProjectTypeReadOnly}
+              >
+                <option value="">{t('newKey.selectEnvironment')}</option>
+                <option value="production">{t('newKey.production')}</option>
+                <option value="development">{t('newKey.development')}</option>
+                <option value="staging">{t('newKey.staging')}</option>
+              </select>
+              {isProjectTypeReadOnly && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {t('newKey.environmentReadOnly')}
+                </p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="clefType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {t('newKey.category')}
+              </label>
+              <select
+                id="clefType"
+                value={clefType}
+                onChange={(e) => setClefType(e.target.value)}
+                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 ${isProjectTypeReadOnly ? 'bg-gray-100 dark:bg-gray-800' : 'bg-white dark:bg-gray-700'} text-gray-900 dark:text-white`}
                 required
               >
-                <option value="">Sélectionner un type</option>
-                <option value="production">Production</option>
-                <option value="development">Développement</option>
-                <option value="staging">Test</option>
+                <option value="">{t('newKey.selectCategory')}</option>
+                <option value="Site e-commerce">{t('newKey.ecommerce')}</option>
+                <option value="API interne">{t('newKey.internalApi')}</option>
+                <option value="Application mobile">{t('newKey.mobileApp')}</option>
+                <option value="Divers">{t('newKey.misc')}</option>
               </select>
             </div>
+            
+
           </div>
 
           <div className="mt-6 flex justify-end space-x-3">
@@ -302,14 +381,14 @@ const NewKeyModal: React.FC<NewKeyModalProps> = ({ isOpen, onClose, onSubmit }) 
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
             >
-              Annuler
+              {t('newKey.cancel')}
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
               disabled={isValidating || (key.startsWith('sk-') && validationResult?.isValid === false)}
             >
-              Créer
+              {t('newKey.create')}
             </button>
           </div>
         </form>
