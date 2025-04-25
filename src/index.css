@@ -402,3 +402,15 @@ textarea:focus {
   border-color: #6366f1 !important; /* indigo-500 */
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
 }
+
+/* Styles personnalisés pour le champ de recherche */
+input.search::placeholder {
+  text-indent: 20px; /* Décalage du texte placeholder */
+  opacity: 0.7; /* Réduire légèrement l'opacité pour améliorer le contraste avec l'icône */
+}
+
+/* Décalage du texte saisi dans le champ de recherche */
+input.search {
+  padding-left: 30px; /* Espace pour l'icône de loupe */
+  text-indent: 20px; /* Décalage supplémentaire du texte saisi */
+}
